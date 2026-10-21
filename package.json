@@ -1,0 +1,35 @@
+{
+  "name": "mediledger",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MediLedger - Privacy-conscious medical record management and verification platform",
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "contracts"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,sol}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,sol}\"",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.16.0",
+    "eslint": "^9.16.0",
+    "globals": "^15.13.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}
