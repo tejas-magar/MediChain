@@ -14,11 +14,24 @@ This repository is organized as an npm workspaces monorepo containing the fronte
 │   ├── api/          # Express + TypeScript backend API
 │   └── web/          # React + Vite + TypeScript frontend
 ├── contracts/        # Hardhat + Solidity smart contracts workspace
+├── docs/
+│   └── design-system.md # Clinical design system & component guidelines
 ├── .env.example      # Environment variables template (placeholders only)
 ├── .gitignore        # Gitignore for secrets, build outputs, and node_modules
 ├── eslint.config.js  # Unified ESLint 9 configuration
 └── tsconfig.base.json# Strict base TypeScript compiler options
 ```
+
+---
+
+## Design System
+
+The clinical design system is documented in [docs/design-system.md](file:///c:/Users/anand/OneDrive/Desktop/MediChain/docs/design-system.md).
+It provides reusable, accessible React components (`apps/web/src/components/ui/`) tailored for hospital, pathology laboratory, and verification environments:
+
+- **Tokens**: Centralized color palette (Navy `#0F2B3C`, Medical Blue `#0254A2`, Slate canvas `#F8FAFC`), 4px spacing grid, and typography scales.
+- **Components**: Button variants, Form inputs with validation, Status badges (`verified`, `pending`, `revoked`), Cards, Data tables, Modals, Confirm dialogs, Inline alerts, Floating toasts, Loading skeletons, and Empty states.
+- **Accessibility**: Full WCAG AA compliance, visible keyboard focus rings, and screen-reader aria properties.
 
 ---
 
