@@ -2,24 +2,29 @@ import React from 'react';
 import { AlertCircle } from 'lucide-react';
 
 export interface FormFieldProps {
-  id: string;
+  id?: string;
   label?: string;
   required?: boolean;
   error?: string;
   hint?: string;
+  helperText?: string;
   children: React.ReactNode;
   className?: string;
 }
 
 export const FormField: React.FC<FormFieldProps> = ({
-  id,
+  id: explicitId,
   label,
   required,
   error,
   hint,
+  helperText,
   children,
   className = '',
 }) => {
+  const generatedId = React.useId();
+  const id = explicitId || generatedId;
+  const effectiveHint = helperText || hint;
   return (
     <div className={`flex flex-col space-y-1.5 ${className}`}>
       {label && (
@@ -38,9 +43,9 @@ export const FormField: React.FC<FormFieldProps> = ({
 
       {children}
 
-      {hint && !error && (
+      {effectiveHint && !error && (
         <p id={`${id}-hint`} className="text-xs text-slate-500">
-          {hint}
+          {effectiveHint}
         </p>
       )}
 

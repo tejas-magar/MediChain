@@ -1,0 +1,324 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  TESTING_LAB
+}
+
+enum DocumentCategory {
+  PRESCRIPTION
+  LAB_REPORT
+}
+
+// Document lifecycle states.
+// IMPORTANT: Transitions are one-way and append-only:
+//   DRAFT -> FINALIZED -> (SUPERSEDED | REVOKED)
+// Finalized documents are immutable. Amendments create new document versions.
+enum DocumentStatus {
+  DRAFT      // Not yet signed or issued. Clinical data may still change.
+  FINALIZED  // Cryptographically signed and officially issued. Immutable.
+  SUPERSEDED // Replaced by a newer authorized version (amendment workflow).
+  REVOKED    // Formally revoked by the issuing authority. No longer valid.
+}
+
+// Blockchain anchoring lifecycle.
+// SECURITY: Only CONFIRMED transactions on a live (non-dev) network may be
+// presented to users as "blockchain-verified". PENDING transactions must never
+// be labeled as confirmed. Simulated/mock transactions (isMockData=true) must
+// display a clear disclaimer and must never be labeled as blockchain-verified.
+enum BlockchainStatus {
+  NOT_ANCHORED // Hash not yet submitted to any chain.
+  PENDING      // Transaction submitted but not yet included in a block.
+  CONFIRMED    // Transaction confirmed in a block on the target ledger.
+  FAILED       // Anchoring attempt failed. May be retried.
+}
+
+enum AssociationStatus {
+  ACTIVE
+  PENDING_CONFIRMATION
+  REVOKED
+  EXPIRED
+}
+
+enum AuditAction {
+  DOCUMENT_CREATED
+  DOCUMENT_FINALIZED
+  DOCUMENT_VIEWED
+  DOCUMENT_DOWNLOADED
+  DOCUMENT_AMENDED
+  DOCUMENT_REVOKED
+  ASSOCIATION_CREATED
+  ASSOCIATION_CONFIRMED
+  ASSOCIATION_REVOKED
+  ACCESS_DENIED
+}
+
+enum CorrectionStatus {
+  PENDING_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  role            UserRole
+  fullName        String
+  mrn             String?   @unique // Medical Record Number for Patients (e.g. MRN-8842-A)
+  licenseNumber   String?   // For Doctor (e.g. MD-12345) or Lab (e.g. LAB-CERT-987)
+  organization    String?   // Hospital, Clinic, or Diagnostic Lab name
+  specialty       String?   // For Doctors (e.g. Cardiology, Internal Medicine)
+  dateOfBirth     DateTime? // Applicable for Patients
+  gender          String?   // For Patients (e.g. Female, Male, Other)
+  bloodType       String?   // For Patients (e.g. A+, O+, B-)
+  allergies       String[]  @default([]) // Clinical allergy alerts
+  phone           String?
+  publicKeyPem    String?   // Public key for digital signature verification
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relationships
+  issuedDocuments             Document[]            @relation("IssuedDocuments")
+  patientDocuments            Document[]            @relation("PatientDocuments")
+  patientAssociations         PatientAssociation[]  @relation("PatientAssociations")
+  providerAssociations        PatientAssociation[]  @relation("ProviderAssociations")
+  auditEvents                 AuditEvent[]          @relation("ActorAuditEvents")
+  correctionRequestsMade      CorrectionRequest[]   @relation("PatientCorrections")
+  correctionRequestsReviewed  CorrectionRequest[]   @relation("ReviewedCorrections")
+
+  @@index([email])
+  @@index([role])
+  @@index([mrn])
+}
+
+model PatientAssociation {
+  id           String             @id @default(uuid())
+  patientId    String
+  patient      User               @relation("PatientAssociations", fields: [patientId], references: [id], onDelete: Cascade)
+  providerId   String
+  provider     User               @relation("ProviderAssociations", fields: [providerId], references: [id], onDelete: Cascade)
+  status       AssociationStatus  @default(ACTIVE)
+  confirmedAt  DateTime?          @default(now())
+  expiresAt    DateTime?
+  purpose      String?            // Reason/Clinical Scope
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([patientId, providerId])
+  @@index([patientId])
+  @@index([providerId])
+  @@index([status])
+}
+
+model Document {
+  id                  String            @id @default(uuid())
+  documentNumber      String            @unique // e.g. RX-2026-0001, LAB-2026-0001
+  category            DocumentCategory
+  title               String
+  description         String?
+  status              DocumentStatus    @default(DRAFT)
+  version             Int               @default(1)
+  
+  // Relations
+  patientId           String
+  patient             User              @relation("PatientDocuments", fields: [patientId], references: [id], onDelete: Restrict)
+  
+  issuerId            String
+  issuer              User              @relation("IssuedDocuments", fields: [issuerId], references: [id], onDelete: Restrict)
+
+  // Versioning and Amendment links
+  parentDocumentId    String?
+  parentDocument      Document?         @relation("DocumentAmendments", fields: [parentDocumentId], references: [id], onDelete: Restrict)
+  amendments          Document[]        @relation("DocumentAmendments")
+  amendmentReason     String?
+
+  // Cryptographic & Integrity Proofs
+  // fileHash: SHA-256 hex digest of the exact canonical bytes of the finalized
+  // document payload. A matching hash proves integrity only when compared
+  // against this trusted reference. A matching hash alone is NOT proof of
+  // authenticity — the issuerSignature and issuer status must also be verified.
+  fileHash            String?           // SHA-256 hex digest of finalized payload bytes
+  issuerSignature     String?           // Cryptographic digital signature of fileHash
+  // verificationToken: High-entropy opaque token used in QR codes and public URLs.
+  // SECURITY: Must NEVER contain patient names, diagnoses, document contents,
+  // passwords, private keys, or decryption keys. The QR code must not grant
+  // access to the private medical file — only to the public verification endpoint.
+  verificationToken   String?           @unique // High-entropy opaque token for QR & public lookup
+
+  // Clinical & Document Content (Private Off-Chain data)
+  clinicalData        Json?             // Structured clinical details
+  fileStoragePath     String?           // Off-chain private encrypted storage reference
+  mimeType            String?           @default("application/json")
+  fileSizeBytes       Int?
+
+  // Blockchain Anchoring
+  blockchainTxHash    String?
+  blockchainStatus    BlockchainStatus  @default(NOT_ANCHORED)
+  blockchainBlockNumber Int?
+
+  // Timestamps
+  issuedAt            DateTime?         // Must be set on finalization
+  revokedAt           DateTime?         // Set when status transitions to REVOKED
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  // Relations
+  versions            DocumentVersion[]
+  auditEvents         AuditEvent[]
+  correctionRequests  CorrectionRequest[]
+  prescriptionDetails PrescriptionDetails?
+  labReportDetails    LabReportDetails?
+
+  @@index([patientId])
+  @@index([issuerId])
+  @@index([verificationToken])
+  @@index([fileHash])
+  @@index([category, status])
+}
+
+model PrescriptionDetails {
+  id                          String                   @id @default(uuid())
+  documentId                  String                   @unique
+  document                    Document                 @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  diagnosis                   String
+  icdCode                     String?
+  treatmentPlan               String
+  allergiesAcknowledged       Boolean                  @default(false)
+  dispenseAsWritten           Boolean                  @default(false)
+  medications                 PrescriptionMedication[]
+  createdAt                   DateTime                 @default(now())
+  updatedAt                   DateTime                 @updatedAt
+
+  @@index([documentId])
+}
+
+model PrescriptionMedication {
+  id              String              @id @default(uuid())
+  prescriptionId  String
+  prescription    PrescriptionDetails @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  name            String
+  strength        String?
+  dosageForm      String?
+  frequency       String
+  duration        String
+  quantity        String?
+  refills         Int                 @default(0)
+  instructions    String?
+  createdAt       DateTime            @default(now())
+
+  @@index([prescriptionId])
+}
+
+model LabReportDetails {
+  id                    String          @id @default(uuid())
+  documentId            String          @unique
+  document              Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  testCategory          String
+  specimenType          String
+  collectionTimestamp   DateTime?
+  fastingStatus         String?
+  technologistRemarks   String?
+  clinicalSignificance  String?
+  results               LabTestResult[]
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([documentId])
+}
+
+model LabTestResult {
+  id              String           @id @default(uuid())
+  labReportId     String
+  labReport       LabReportDetails @relation(fields: [labReportId], references: [id], onDelete: Cascade)
+  parameterName   String
+  value           String
+  unit            String
+  referenceRange  String
+  flag            String           @default("NORMAL")
+  createdAt       DateTime         @default(now())
+
+  @@index([labReportId])
+}
+
+model DocumentVersion {
+  id                  String    @id @default(uuid())
+  documentId          String
+  document            Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionNumber       Int
+  title               String
+  clinicalData        Json
+  fileHash            String
+  issuerSignature     String
+  issuerId            String
+  fileStoragePath     String?
+  mimeType            String?
+  fileSizeBytes       Int?
+  finalizedAt         DateTime  @default(now())
+  amendmentReason     String?
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+  @@index([fileHash])
+}
+
+model AuditEvent {
+  id          String       @id @default(uuid())
+  documentId  String?
+  document    Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  action      AuditAction
+  actorId     String
+  actor       User         @relation("ActorAuditEvents", fields: [actorId], references: [id], onDelete: Cascade)
+  actorRole   UserRole
+  ipAddress   String?
+  userAgent   String?
+  details     Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([documentId])
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model CorrectionRequest {
+  id                String            @id @default(uuid())
+  documentId        String
+  document          Document          @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  
+  patientId         String
+  patient           User              @relation("PatientCorrections", fields: [patientId], references: [id], onDelete: Restrict)
+
+  reviewerId        String?
+  reviewer          User?             @relation("ReviewedCorrections", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  requestedChanges  String            // Specific clinical or demographic correction requested
+  reason            String            // Reason for request
+  status            CorrectionStatus  @default(PENDING_REVIEW)
+  reviewNotes       String?           // Issuer's feedback when accepting or rejecting
+  reviewedAt        DateTime?
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([documentId])
+  @@index([patientId])
+  @@index([status])
+}
+
+// Session table required by connect-pg-simple
+model session {
+  sid     String   @id @db.VarChar
+  sess    Json     @db.Json
+  expire  DateTime @db.Timestamp(6)
+
+  @@index([expire], map: "IDX_session_expire")
+}

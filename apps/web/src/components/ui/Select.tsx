@@ -1,12 +1,18 @@
 import React from 'react';
 import { ChevronDown } from 'lucide-react';
 
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
 export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   isInvalid?: boolean;
+  options?: SelectOption[];
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ isInvalid = false, children, className = '', id, disabled, ...props }, ref) => {
+  ({ isInvalid = false, options, children, className = '', id, disabled, ...props }, ref) => {
     const baseClasses =
       'w-full appearance-none bg-white text-slate-900 text-sm rounded-md border transition-colors duration-150 py-2 pl-3 pr-9 shadow-clinical focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed';
 
@@ -25,7 +31,13 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           className={`${baseClasses} ${stateClasses} ${className}`}
           {...props}
         >
-          {children}
+          {options
+            ? options.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))
+            : children}
         </select>
         <span
           className="absolute right-3 text-slate-400 pointer-events-none flex items-center justify-center w-4 h-4"

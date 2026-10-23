@@ -9,6 +9,7 @@ export interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   closeOnBackdrop?: boolean;
 }
 
@@ -20,8 +21,10 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   footer,
   maxWidth = 'md',
+  size,
   closeOnBackdrop = true,
 }) => {
+  const effectiveMaxWidth = size || maxWidth;
   const modalRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
 
@@ -65,7 +68,7 @@ export const Modal: React.FC<ModalProps> = ({
     md: 'max-w-md',
     lg: 'max-w-lg',
     xl: 'max-w-xl',
-  }[maxWidth];
+  }[effectiveMaxWidth];
 
   return (
     <div

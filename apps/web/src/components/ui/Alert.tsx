@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle2, AlertTriangle, AlertOctagon, Info, X } from 'lucide-react';
 
-export type AlertVariant = 'info' | 'success' | 'warning' | 'error';
+export type AlertVariant = 'info' | 'success' | 'warning' | 'error' | 'danger';
 
 export interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: AlertVariant;
@@ -17,6 +17,7 @@ export const Alert: React.FC<AlertProps> = ({
   className = '',
   ...props
 }) => {
+  const effectiveVariant = variant === 'danger' ? 'error' : variant;
   const config = {
     info: {
       container: 'bg-medical-50/70 border-medical-200 text-medical-950',
@@ -38,7 +39,7 @@ export const Alert: React.FC<AlertProps> = ({
       icon: <AlertOctagon className="w-4 h-4 text-rose-700 shrink-0 mt-0.5" />,
       role: 'alert',
     },
-  }[variant];
+  }[effectiveVariant];
 
   return (
     <div

@@ -8,12 +8,72 @@
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased font-sans selection:bg-medical-100 selection:text-medical-900;
+    @apply bg-slate-50 text-slate-900 antialiased font-sans;
     min-height: 100vh;
   }
 
-  /* High-contrast accessible focus ring standard across interactive elements */
   *:focus-visible {
-    @apply outline-none ring-2 ring-medical-600 ring-offset-2 ring-offset-white;
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer components {
+  /* ── Sidebar nav links ── */
+  .mc-sidebar-link {
+    @apply flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 cursor-pointer select-none text-blue-100/80 hover:text-white hover:bg-white/10;
+  }
+
+  .mc-sidebar-link.active {
+    @apply bg-white/15 text-white font-semibold;
+  }
+
+  /* ── Clean card used across pages ── */
+  .mc-card {
+    @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+  }
+
+  /* ── Page title ── */
+  .mc-page-title {
+    @apply text-xl font-bold text-slate-900 tracking-tight;
+  }
+
+  .mc-page-sub {
+    @apply text-sm text-slate-500 mt-0.5;
+  }
+
+  /* ── Table header cell ── */
+  .mc-th {
+    @apply py-3 px-4 text-[11px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-slate-200 text-left;
+  }
+
+  /* ── Table body cell ── */
+  .mc-td {
+    @apply py-3.5 px-4 text-sm text-slate-700 border-b border-slate-100 last:border-0;
+  }
+
+  /* ── Stat card ── */
+  .mc-stat {
+    @apply mc-card p-5 flex items-center gap-4;
+  }
+
+  /* ── Primary button (blue, matches sidebar accent) ── */
+  .mc-btn-primary {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 shadow-sm select-none;
+  }
+
+  /* ── Outline button ── */
+  .mc-btn-outline {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 active:bg-slate-100 transition-colors duration-150 shadow-sm select-none;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar but keep scroll functionality */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }

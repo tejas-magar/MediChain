@@ -39,12 +39,16 @@ contracts/typechain-types/
 id_rsa*
 keys/
 private_keys/
+.keystore/
+apps/api/.keystore/
 
 # ── Uploaded Medical Files & Runtime Storage ──────────────────
 uploads/
 apps/api/uploads/
 medical-files/
 storage/
+apps/api/storage/
+*.bin
 
 # ── Local Databases & Backups ─────────────────────────────────
 *.db
