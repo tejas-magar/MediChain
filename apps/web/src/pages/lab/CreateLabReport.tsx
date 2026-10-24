@@ -308,23 +308,30 @@ export const CreateLabReport: React.FC = () => {
           interpretation: technologistRemarks.trim(),
         });
         createdId = res.document.id;
+        if (res.document) {
+          mockService.syncFromBackend([res.document]);
+        }
       } catch (apiErr) {
         console.warn('[CreateLabReport] Backend API call fallback to local store:', apiErr);
       }
 
       mockService.registerDynamicPatient(selectedPatient);
-      const localDoc = mockService.createLabReport(
-        {
-          patientId: selectedPatient.id,
-          title: title.trim(),
-          clinicalData,
-        },
-        activeLab
-      );
+      let localDocId = createdId;
+      if (!createdId) {
+        const localDoc = mockService.createLabReport(
+          {
+            patientId: selectedPatient.id,
+            title: title.trim(),
+            clinicalData,
+          },
+          activeLab
+        );
+        localDocId = localDoc.id;
+      }
 
       setIsFinalizing(false);
       setIsPreviewOpen(false);
-      navigate(`/documents/${createdId || localDoc.id}`);
+      navigate(`/documents/${localDocId}`);
     } catch (err: any) {
       setIsFinalizing(false);
       alert(`Error creating lab report: ${err.message}`);

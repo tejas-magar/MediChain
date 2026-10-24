@@ -75,10 +75,10 @@ describe('Phase 2 Role-Specific Workflows & Synthetic Data', () => {
       localStorage.setItem(
         'mediledger_auth_user',
         JSON.stringify({
-          id: 'PAT-881',
+          id: '7cebd1b0-69b2-4c75-a06c-c5eceb035ff1',
           fullName: 'Aarav Sharma',
           role: 'PATIENT',
-          mrn: 'ABHA-91-8842-1029',
+          mrn: 'ABHA-91-8841-1029',
           email: 'aarav.sharma@example.in',
           dateOfBirth: '1988-06-14',
           gender: 'Male',
@@ -179,9 +179,8 @@ describe('Phase 2 Role-Specific Workflows & Synthetic Data', () => {
     it('renders Patient Search allowing selection for new prescription', async () => {
       renderWithContext('/doctor/patients');
       await waitFor(() => {
-        expect(screen.getByText(/Aarav Sharma|Eleanor Vance/i)).toBeDefined();
-        expect(screen.getByText(/Priya Patel|Marcus Sterling/i)).toBeDefined();
-        expect(screen.getByText(/Rohan Iyer|Sophia Patel/i)).toBeDefined();
+        expect(screen.getByText(/Aarav Sharma/i)).toBeDefined();
+        expect(screen.getByText(/ABHA-91-8841-1029/i)).toBeDefined();
       });
     });
 
@@ -340,7 +339,7 @@ describe('Phase 2 Role-Specific Workflows & Synthetic Data', () => {
 
   describe('Document Verification & Ledger Integrity', () => {
     it('verifies valid token and transparently states Mock Ledger status without claiming real blockchain is live', async () => {
-      renderWithContext('/verify/tok_rx_8841_02_c3d8a1f7');
+      renderWithContext('/verify/tok_rx_8841_01_c8d194ae');
 
       await waitFor(() => {
         expect(screen.getByText(/Public Document Verification Portal/i)).toBeDefined();

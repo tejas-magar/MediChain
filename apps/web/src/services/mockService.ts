@@ -31,9 +31,9 @@ import {
 } from './mockData';
 
 const STORAGE_KEYS = {
-  DOCUMENTS: 'mediledger_mock_documents_in_v4',
-  CORRECTIONS: 'mediledger_mock_corrections_in_v4',
-  CONSENTS: 'mediledger_mock_consents_in_v1',
+  DOCUMENTS: 'mediledger_mock_documents_in_v6',
+  CORRECTIONS: 'mediledger_mock_corrections_in_v6',
+  CONSENTS: 'mediledger_mock_consents_in_v3',
 };
 
 // Generate high-entropy hex string simulating SHA-256
@@ -122,6 +122,128 @@ class MockService {
     }
   }
 
+  /**
+   * Synchronizes documents loaded from the real PostgreSQL database into local memory & storage.
+   */
+  syncFromBackend(backendDocs: any[]) {
+    if (!Array.isArray(backendDocs) || backendDocs.length === 0) return;
+
+    backendDocs.forEach((bd) => {
+      if (!bd || !bd.id) return;
+      const existingIdx = this.documents.findIndex(
+        (d) => d.id === bd.id || d.documentNumber === bd.documentNumber
+      );
+
+      let clinicalData = bd.clinicalData;
+      if (bd.prescriptionDetails) {
+        clinicalData = {
+          diagnosis: bd.prescriptionDetails.diagnosis || bd.description || bd.title,
+          icdCode: bd.prescriptionDetails.icdCode,
+          treatmentPlan: bd.prescriptionDetails.treatmentPlan || '',
+          medications: (bd.prescriptionDetails.medications || []).map((m: any, i: number) => ({
+            id: m.id || `med-${i}`,
+            medicationName: m.name,
+            strength: m.strength || '',
+            dosageForm: m.dosageForm || 'Tablet',
+            frequency: m.frequency || 'Daily',
+            duration: m.duration || '30 days',
+            quantity: m.quantity || '30 tablets',
+            refills: m.refills || 0,
+            instructions: m.instructions || '',
+          })),
+          dispenseAsWritten: bd.prescriptionDetails.dispenseAsWritten || false,
+          patientAllergiesAcknowledged: bd.prescriptionDetails.allergiesAcknowledged || true,
+        };
+      } else if (bd.labReportDetails) {
+        clinicalData = {
+          testCategory: bd.labReportDetails.testCategory || 'Comprehensive Metabolic Panel',
+          specimenType: bd.labReportDetails.specimenType || 'Serum / Venous Blood',
+          collectionTimestamp: bd.labReportDetails.collectionTimestamp || bd.issuedAt || new Date().toISOString(),
+          fastingStatus: bd.labReportDetails.fastingStatus || 'Fasting (12 hrs)',
+          results: (bd.labReportDetails.results || []).map((r: any, i: number) => ({
+            id: r.id || `res-${i}`,
+            parameterName: r.parameterName || r.testName,
+            value: r.value,
+            unit: r.unit || '',
+            referenceRange: r.referenceRange || '',
+            flag: (r.flag === 'HIGH' ? 'ABNORMAL_HIGH' : r.flag === 'LOW' ? 'ABNORMAL_LOW' : r.flag === 'CRITICAL' ? 'CRITICAL' : 'NORMAL') as any,
+          })),
+          technologistRemarks: bd.labReportDetails.technologistRemarks || '',
+          clinicalSignificance: bd.labReportDetails.clinicalSignificance,
+        };
+      }
+
+      const mappedDoc: MedicalDocument = {
+        id: bd.id,
+        documentNumber: bd.documentNumber,
+        category: bd.category,
+        title: bd.title,
+        status: bd.status || 'FINALIZED',
+        version: bd.version || 1,
+        patientId: bd.patientId || (bd.patient ? bd.patient.id : ''),
+        patientName: bd.patient?.fullName || 'Patient',
+        patientMrn: bd.patient?.mrn || 'ABHA-PATIENT',
+        issuerId: bd.issuerId || (bd.issuer ? bd.issuer.id : ''),
+        issuerName: bd.issuer?.fullName || (bd.category === 'PRESCRIPTION' ? 'Dr. Rajesh Varma, MD, DM' : 'Dr. Lal PathLabs & Diagnostics'),
+        issuerRole: bd.issuer?.role || (bd.category === 'PRESCRIPTION' ? 'DOCTOR' : 'TESTING_LAB'),
+        issuerOrg: bd.issuer?.organization || (bd.category === 'PRESCRIPTION' ? 'AIIMS New Delhi • Department of Cardiology' : 'National Reference Laboratory, New Delhi'),
+        issuerLicense: bd.issuer?.licenseNumber || (bd.category === 'PRESCRIPTION' ? 'NMC-DL-2018-9412' : 'NABL-MC-88910 (ICMR Certified)'),
+        parentDocumentId: bd.parentDocumentId,
+        supersededById: bd.supersededById,
+        amendmentReason: bd.amendmentReason,
+        versionHistory: (bd.versions && bd.versions.length > 0)
+          ? bd.versions.map((v: any) => ({
+              version: v.versionNumber,
+              documentId: bd.id,
+              documentNumber: bd.documentNumber,
+              timestamp: v.finalizedAt || bd.issuedAt,
+              author: bd.issuer?.fullName || 'Authorized Issuer',
+              reason: v.amendmentReason,
+            }))
+          : [
+              {
+                version: bd.version || 1,
+                documentId: bd.id,
+                documentNumber: bd.documentNumber,
+                timestamp: bd.issuedAt || new Date().toISOString(),
+                author: bd.issuer?.fullName || 'Authorized Issuer',
+              },
+            ],
+        fileHash: bd.fileHash || 'b080a5eedf181a52dc4ca62b7060d378bf77cccbe93e3eb1cf8ae1092227df97',
+        issuerSignature: bd.issuerSignature || 'RSA-PSS-SHA256:verified_database_signature',
+        verificationToken: bd.verificationToken || `tok_${bd.documentNumber.toLowerCase()}`,
+        qrCodeUrl: typeof window !== 'undefined' ? `${window.location.origin}/verify/${bd.verificationToken}` : '',
+        clinicalData: clinicalData || {
+          diagnosis: bd.title,
+          treatmentPlan: bd.description || '',
+          medications: [],
+          dispenseAsWritten: false,
+          patientAllergiesAcknowledged: true,
+        },
+        blockchain: {
+          status: 'CONFIRMED',
+          txHash: '0x' + (bd.fileHash ? bd.fileHash.slice(0, 40) : '0000000000000000000000000000000000000000'),
+          blockNumber: 1984550,
+          timestamp: bd.issuedAt || new Date().toISOString(),
+          ledgerNetwork: 'Local Hardhat Node',
+          isMockData: true,
+          notes: 'Record commitment anchored with digital signature in PostgreSQL.',
+        },
+        issuedAt: bd.issuedAt || new Date().toISOString(),
+        createdAt: bd.createdAt || bd.issuedAt || new Date().toISOString(),
+        updatedAt: bd.updatedAt || bd.issuedAt || new Date().toISOString(),
+      };
+
+      if (existingIdx >= 0) {
+        this.documents[existingIdx] = mappedDoc;
+      } else {
+        this.documents.unshift(mappedDoc);
+      }
+    });
+
+    this.saveDocuments();
+  }
+
   // Consent & Access Management
   getConsentRequestsByPatient(patientId: string, patientName?: string, patientMrn?: string): ConsentRequest[] {
     return this.consents.filter(
@@ -141,10 +263,25 @@ class MockService {
     providerId: string,
     patientMrn?: string
   ): { status: 'NONE' | 'PENDING' | 'ACTIVE' | 'REVOKED'; scope?: ConsentScope; request?: ConsentRequest } {
+    const isDoc =
+      providerId === 'DOC-101' ||
+      providerId === 'bff9888f-fb3d-4b5c-a22b-c7a313763f0c' ||
+      providerId === MOCK_DOCTOR.id;
+    const isLab =
+      providerId === 'LAB-201' ||
+      providerId === 'b76d8afd-971d-47f1-ab77-333954275ada' ||
+      providerId === MOCK_TESTING_LAB.id;
+
     const found = this.consents.find(
       (c) =>
-        (c.patientId === patientId || (patientMrn && c.patientMrn === patientMrn)) &&
-        c.providerId === providerId
+        (c.patientId === patientId ||
+          (patientMrn && c.patientMrn === patientMrn) ||
+          c.patientId === '7cebd1b0-69b2-4c75-a06c-c5eceb035ff1' ||
+          patientId === '7cebd1b0-69b2-4c75-a06c-c5eceb035ff1' ||
+          patientId === 'PAT-001') &&
+        (c.providerId === providerId ||
+          (isDoc && (c.providerId === 'DOC-101' || c.providerId === 'bff9888f-fb3d-4b5c-a22b-c7a313763f0c' || c.providerRole === 'DOCTOR')) ||
+          (isLab && (c.providerId === 'LAB-201' || c.providerId === 'b76d8afd-971d-47f1-ab77-333954275ada' || c.providerRole === 'TESTING_LAB')))
     );
 
     if (!found) return { status: 'NONE' };
@@ -270,11 +407,13 @@ class MockService {
       if (d.patientId === patientId) return true;
       if (mrn && d.patientMrn && d.patientMrn.toLowerCase() === mrn.toLowerCase()) return true;
       if (fullName && d.patientName && d.patientName.toLowerCase() === fullName.toLowerCase()) return true;
-      if (d.patientId === 'PAT-881' && (
-        patientId === 'PAT-881' ||
-        mrn === 'ABHA-91-8841-1029' ||
-        (fullName && fullName.toLowerCase().includes('aarav'))
-      )) {
+      if (
+        (d.patientId === '7cebd1b0-69b2-4c75-a06c-c5eceb035ff1' || d.patientId === 'PAT-881') &&
+        (patientId === '7cebd1b0-69b2-4c75-a06c-c5eceb035ff1' ||
+          patientId === 'PAT-881' ||
+          mrn === 'ABHA-91-8841-1029' ||
+          (fullName && fullName.toLowerCase().includes('aarav')))
+      ) {
         return true;
       }
       return false;
@@ -285,16 +424,20 @@ class MockService {
     return this.documents.filter((d) => {
       if (d.issuerId === issuerId) return true;
       if (licenseNumber && d.issuerLicense && d.issuerLicense.toLowerCase() === licenseNumber.toLowerCase()) return true;
-      if (d.issuerId === 'DOC-101' && (
-        issuerId === 'DOC-101' ||
-        (licenseNumber && licenseNumber.includes('NMC-DL-2018-9412'))
-      )) {
+      if (
+        (d.issuerId === 'bff9888f-fb3d-4b5c-a22b-c7a313763f0c' || d.issuerId === 'DOC-101') &&
+        (issuerId === 'bff9888f-fb3d-4b5c-a22b-c7a313763f0c' ||
+          issuerId === 'DOC-101' ||
+          (licenseNumber && licenseNumber.includes('NMC-DL-2018-9412')))
+      ) {
         return true;
       }
-      if (d.issuerId === 'LAB-201' && (
-        issuerId === 'LAB-201' ||
-        (licenseNumber && licenseNumber.includes('NABL-MC-88910'))
-      )) {
+      if (
+        (d.issuerId === 'b76d8afd-971d-47f1-ab77-333954275ada' || d.issuerId === 'LAB-201') &&
+        (issuerId === 'b76d8afd-971d-47f1-ab77-333954275ada' ||
+          issuerId === 'LAB-201' ||
+          (licenseNumber && licenseNumber.includes('NABL-MC-88910')))
+      ) {
         return true;
       }
       return false;
@@ -605,10 +748,12 @@ class MockService {
     return this.corrections.filter((c) => {
       if (c.patientId === patientId) return true;
       if (fullName && c.patientName.toLowerCase() === fullName.toLowerCase()) return true;
-      if (c.patientId === 'PAT-881' && (
-        patientId === 'PAT-881' ||
-        (fullName && fullName.toLowerCase().includes('aarav'))
-      )) {
+      if (
+        (c.patientId === '7cebd1b0-69b2-4c75-a06c-c5eceb035ff1' || c.patientId === 'PAT-881') &&
+        (patientId === '7cebd1b0-69b2-4c75-a06c-c5eceb035ff1' ||
+          patientId === 'PAT-881' ||
+          (fullName && fullName.toLowerCase().includes('aarav')))
+      ) {
         return true;
       }
       return false;

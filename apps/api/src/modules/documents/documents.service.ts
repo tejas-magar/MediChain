@@ -28,7 +28,20 @@ export class DocumentService {
       throw err;
     }
 
-    const hasAssociation = await associationService.verifyActiveAssociation(input.patientId, issuerId);
+    const patient = await prisma.user.findFirst({
+      where: {
+        role: UserRole.PATIENT,
+        OR: [{ id: input.patientId }, { mrn: input.patientId }],
+      },
+    });
+    if (!patient) {
+      const err = new Error('Specified patient does not exist or is not a patient.');
+      (err as any).statusCode = 404;
+      (err as any).code = 'PATIENT_NOT_FOUND';
+      throw err;
+    }
+
+    const hasAssociation = await associationService.verifyActiveAssociation(patient.id, issuerId);
     if (!hasAssociation) {
       const err = new Error('Active patient-to-provider association required before issuing documents.');
       (err as any).statusCode = 403;
@@ -42,7 +55,7 @@ export class DocumentService {
       clinicalIndication: input.clinicalIndication,
       medications: input.medications,
       notes: input.notes ?? null,
-      patientId: input.patientId,
+      patientId: patient.id,
       issuerId,
     };
 
@@ -75,21 +88,24 @@ export class DocumentService {
       throw err;
     }
 
-    const hasAssociation = await associationService.verifyActiveAssociation(input.patientId, issuerId, 'CREATE_DOCUMENT');
+    const patient = await prisma.user.findFirst({
+      where: {
+        role: UserRole.PATIENT,
+        OR: [{ id: input.patientId }, { mrn: input.patientId }],
+      },
+    });
+    if (!patient) {
+      const err = new Error('Specified patient does not exist or is not a patient.');
+      (err as any).statusCode = 404;
+      (err as any).code = 'PATIENT_NOT_FOUND';
+      throw err;
+    }
+
+    const hasAssociation = await associationService.verifyActiveAssociation(patient.id, issuerId, 'CREATE_DOCUMENT');
     if (!hasAssociation) {
       const err = new Error('Active patient-to-provider association required before issuing documents.');
       (err as any).statusCode = 403;
       (err as any).code = 'ASSOCIATION_REQUIRED';
-      throw err;
-    }
-
-    const patient = await prisma.user.findUnique({
-      where: { id: input.patientId },
-    });
-    if (!patient || patient.role !== UserRole.PATIENT) {
-      const err = new Error('Specified patient does not exist or is not a patient.');
-      (err as any).statusCode = 404;
-      (err as any).code = 'PATIENT_NOT_FOUND';
       throw err;
     }
 
@@ -154,7 +170,7 @@ export class DocumentService {
           description: input.clinicalIndication,
           status: DocumentStatus.FINALIZED,
           version: 1,
-          patientId: input.patientId,
+          patientId: patient.id,
           issuerId,
           fileHash,
           issuerSignature: signature,
@@ -248,7 +264,20 @@ export class DocumentService {
       throw err;
     }
 
-    const hasAssociation = await associationService.verifyActiveAssociation(input.patientId, issuerId, 'CREATE_DOCUMENT');
+    const patient = await prisma.user.findFirst({
+      where: {
+        role: UserRole.PATIENT,
+        OR: [{ id: input.patientId }, { mrn: input.patientId }],
+      },
+    });
+    if (!patient) {
+      const err = new Error('Specified patient does not exist or is not a patient.');
+      (err as any).statusCode = 404;
+      (err as any).code = 'PATIENT_NOT_FOUND';
+      throw err;
+    }
+
+    const hasAssociation = await associationService.verifyActiveAssociation(patient.id, issuerId, 'CREATE_DOCUMENT');
     if (!hasAssociation) {
       const err = new Error('Active patient-to-provider association required before issuing documents.');
       (err as any).statusCode = 403;
@@ -263,7 +292,7 @@ export class DocumentService {
       collectionDate: input.collectionDate,
       results: input.results,
       interpretation: input.interpretation ?? null,
-      patientId: input.patientId,
+      patientId: patient.id,
       issuerId,
     };
 
@@ -296,21 +325,24 @@ export class DocumentService {
       throw err;
     }
 
-    const hasAssociation = await associationService.verifyActiveAssociation(input.patientId, issuerId, 'CREATE_DOCUMENT');
+    const patient = await prisma.user.findFirst({
+      where: {
+        role: UserRole.PATIENT,
+        OR: [{ id: input.patientId }, { mrn: input.patientId }],
+      },
+    });
+    if (!patient) {
+      const err = new Error('Specified patient does not exist or is not a patient.');
+      (err as any).statusCode = 404;
+      (err as any).code = 'PATIENT_NOT_FOUND';
+      throw err;
+    }
+
+    const hasAssociation = await associationService.verifyActiveAssociation(patient.id, issuerId, 'CREATE_DOCUMENT');
     if (!hasAssociation) {
       const err = new Error('Active patient-to-provider association required before issuing documents.');
       (err as any).statusCode = 403;
       (err as any).code = 'ASSOCIATION_REQUIRED';
-      throw err;
-    }
-
-    const patient = await prisma.user.findUnique({
-      where: { id: input.patientId },
-    });
-    if (!patient || patient.role !== UserRole.PATIENT) {
-      const err = new Error('Specified patient does not exist or is not a patient.');
-      (err as any).statusCode = 404;
-      (err as any).code = 'PATIENT_NOT_FOUND';
       throw err;
     }
 
@@ -366,7 +398,7 @@ export class DocumentService {
           description: `Diagnostic panel: ${input.title}`,
           status: DocumentStatus.FINALIZED,
           version: 1,
-          patientId: input.patientId,
+          patientId: patient.id,
           issuerId,
           fileHash,
           issuerSignature: signature,

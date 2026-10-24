@@ -70,21 +70,25 @@ export class AssociationService {
     }
 
     // Verify patient exists and has PATIENT role
-    const patient = await prisma.user.findUnique({
-      where: { id: patientId },
+    const patient = await prisma.user.findFirst({
+      where: {
+        role: UserRole.PATIENT,
+        OR: [{ id: patientId }, { mrn: patientId }],
+      },
     });
 
-    if (!patient || patient.role !== UserRole.PATIENT) {
+    if (!patient) {
       const error = new Error('Specified patient was not found or is not a registered patient.');
       (error as any).statusCode = 404;
       (error as any).code = 'PATIENT_NOT_FOUND';
       throw error;
     }
+    const actualPatientId = patient.id;
 
     const association = await prisma.patientAssociation.upsert({
       where: {
         patientId_providerId: {
-          patientId,
+          patientId: actualPatientId,
           providerId,
         },
       },
@@ -95,7 +99,7 @@ export class AssociationService {
         updatedAt: new Date(),
       },
       create: {
-        patientId,
+        patientId: actualPatientId,
         providerId,
         status: AssociationStatus.ACTIVE,
         confirmedAt: new Date(),
@@ -294,16 +298,20 @@ export class AssociationService {
       throw error;
     }
 
-    const patient = await prisma.user.findUnique({
-      where: { id: patientId },
+    const patient = await prisma.user.findFirst({
+      where: {
+        role: UserRole.PATIENT,
+        OR: [{ id: patientId }, { mrn: patientId }],
+      },
     });
 
-    if (!patient || patient.role !== UserRole.PATIENT) {
+    if (!patient) {
       const error = new Error('Specified patient was not found.');
       (error as any).statusCode = 404;
       (error as any).code = 'PATIENT_NOT_FOUND';
       throw error;
     }
+    const actualPatientId = patient.id;
 
     const purposeData = JSON.stringify({
       scope: 'PENDING',
@@ -315,7 +323,7 @@ export class AssociationService {
     const association = await prisma.patientAssociation.upsert({
       where: {
         patientId_providerId: {
-          patientId,
+          patientId: actualPatientId,
           providerId,
         },
       },
@@ -325,7 +333,7 @@ export class AssociationService {
         updatedAt: new Date(),
       },
       create: {
-        patientId,
+        patientId: actualPatientId,
         providerId,
         status: AssociationStatus.PENDING_CONFIRMATION,
         purpose: purposeData,
@@ -468,9 +476,18 @@ export class AssociationService {
    * Retrieves association / consent status between a specific patient and provider.
    */
   async getAssociationStatus(patientId: string, providerId: string) {
+    const resolvedPatient = await prisma.user.findFirst({
+      where: {
+        role: UserRole.PATIENT,
+        OR: [{ id: patientId }, { mrn: patientId }],
+      },
+      select: { id: true },
+    });
+    const actualPatientId = resolvedPatient ? resolvedPatient.id : patientId;
+
     const association = await prisma.patientAssociation.findFirst({
       where: {
-        patientId,
+        patientId: actualPatientId,
         providerId,
       },
       include: {
@@ -519,9 +536,18 @@ export class AssociationService {
     providerId: string,
     requiredPermission?: 'CREATE_DOCUMENT' | 'VIEW_HISTORY'
   ): Promise<boolean> {
+    const resolvedPatient = await prisma.user.findFirst({
+      where: {
+        role: UserRole.PATIENT,
+        OR: [{ id: patientId }, { mrn: patientId }],
+      },
+      select: { id: true },
+    });
+    const actualPatientId = resolvedPatient ? resolvedPatient.id : patientId;
+
     const association = await prisma.patientAssociation.findFirst({
       where: {
-        patientId,
+        patientId: actualPatientId,
         providerId,
         status: AssociationStatus.ACTIVE,
       },

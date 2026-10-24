@@ -309,24 +309,31 @@ export const CreatePrescription: React.FC = () => {
           notes: treatmentPlan.trim(),
         });
         createdId = res.document.id;
+        if (res.document) {
+          mockService.syncFromBackend([res.document]);
+        }
       } catch (apiErr) {
         console.warn('[CreatePrescription] Backend API call fallback to local store:', apiErr);
       }
 
       // Sync into mockService so client views have the record
       mockService.registerDynamicPatient(selectedPatient);
-      const localDoc = mockService.createPrescription(
-        {
-          patientId: selectedPatient.id,
-          title: title.trim(),
-          clinicalData,
-        },
-        activeDoctor
-      );
+      let localDocId = createdId;
+      if (!createdId) {
+        const localDoc = mockService.createPrescription(
+          {
+            patientId: selectedPatient.id,
+            title: title.trim(),
+            clinicalData,
+          },
+          activeDoctor
+        );
+        localDocId = localDoc.id;
+      }
 
       setIsFinalizing(false);
       setIsPreviewOpen(false);
-      navigate(`/documents/${createdId || localDoc.id}`);
+      navigate(`/documents/${localDocId}`);
     } catch (err: any) {
       setIsFinalizing(false);
       alert(`Error creating prescription: ${err.message}`);

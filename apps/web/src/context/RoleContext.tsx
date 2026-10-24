@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole, PatientProfile } from '../types';
 import { MOCK_PATIENTS, MOCK_DOCTOR, MOCK_TESTING_LAB } from '../services/mockData';
 import { apiClient, RegisterPayload } from '../services/apiClient';
+import { mockService } from '../services/mockService';
 
 export interface AuthenticatedUser {
   id: string;
@@ -78,6 +79,16 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setRoleState(res.user.role);
           localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(res.user));
           localStorage.setItem(ROLE_STORAGE_KEY, res.user.role);
+
+          // Sync database documents into frontend store
+          apiClient
+            .getDocuments()
+            .then((docRes) => {
+              if (docRes.documents && docRes.documents.length > 0) {
+                mockService.syncFromBackend(docRes.documents);
+              }
+            })
+            .catch(() => {});
         }
       })
       .catch(() => {
@@ -113,6 +124,16 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRoleState(user.role);
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     localStorage.setItem(ROLE_STORAGE_KEY, user.role);
+
+    apiClient
+      .getDocuments()
+      .then((docRes) => {
+        if (docRes.documents && docRes.documents.length > 0) {
+          mockService.syncFromBackend(docRes.documents);
+        }
+      })
+      .catch(() => {});
+
     return user;
   };
 
@@ -124,6 +145,16 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRoleState(user.role);
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     localStorage.setItem(ROLE_STORAGE_KEY, user.role);
+
+    apiClient
+      .getDocuments()
+      .then((docRes) => {
+        if (docRes.documents && docRes.documents.length > 0) {
+          mockService.syncFromBackend(docRes.documents);
+        }
+      })
+      .catch(() => {});
+
     return res as { user: AuthenticatedUser; issuerPrivateKeyPem?: string };
   };
 

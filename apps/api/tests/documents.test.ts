@@ -100,14 +100,44 @@ describe('Phase 5 — Medical Folders, Document Issuance & Verification Integrat
   });
 
   afterAll(async () => {
-    // Cleanup created records
-    await prisma.documentVersion.deleteMany({});
-    await prisma.auditEvent.deleteMany({});
-    await prisma.document.deleteMany({});
-    await prisma.patientAssociation.deleteMany({});
+    // Cleanup created test records
+    const testDocIds = [issuedPrescriptionId, issuedLabReportId].filter(Boolean);
+    const testUserIds = [patientAId, patientBId, doctor1Id, doctor2Id, lab1Id].filter(Boolean);
+
+    await prisma.correctionRequest.deleteMany({
+      where: { documentId: { in: testDocIds } },
+    });
+    await prisma.documentVersion.deleteMany({
+      where: { documentId: { in: testDocIds } },
+    });
+    await prisma.prescriptionDetails.deleteMany({
+      where: { documentId: { in: testDocIds } },
+    });
+    await prisma.labReportDetails.deleteMany({
+      where: { documentId: { in: testDocIds } },
+    });
+    await prisma.auditEvent.deleteMany({
+      where: {
+        OR: [
+          { documentId: { in: testDocIds } },
+          { actorId: { in: testUserIds } },
+        ],
+      },
+    });
+    await prisma.document.deleteMany({
+      where: { id: { in: testDocIds } },
+    });
+    await prisma.patientAssociation.deleteMany({
+      where: {
+        OR: [
+          { patientId: { in: [patientAId, patientBId].filter(Boolean) } },
+          { providerId: { in: [doctor1Id, doctor2Id, lab1Id].filter(Boolean) } },
+        ],
+      },
+    });
     await prisma.user.deleteMany({
       where: {
-        id: { in: [patientAId, patientBId, doctor1Id, doctor2Id, lab1Id].filter(Boolean) },
+        id: { in: testUserIds },
       },
     });
     await prisma.$disconnect();
