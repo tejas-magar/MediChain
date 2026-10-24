@@ -245,6 +245,74 @@ class MockService {
   }
 
   // Consent & Access Management
+  syncConsentsFromBackend(backendAssocs: any[]) {
+    if (!Array.isArray(backendAssocs)) return;
+
+    backendAssocs.forEach((assoc) => {
+      let scope: ConsentScope | undefined = undefined;
+      let note = 'Clinical consultation, historical records review, and document issuance';
+      let requestedAt = assoc.createdAt || new Date().toISOString();
+      let respondedAt = assoc.confirmedAt || undefined;
+
+      if (assoc.purpose) {
+        try {
+          const parsed = typeof assoc.purpose === 'string' && assoc.purpose.startsWith('{') ? JSON.parse(assoc.purpose) : null;
+          if (parsed) {
+            if (parsed.scope === 'CREATE_ONLY' || parsed.scope === 'FULL_ACCESS') {
+              scope = parsed.scope;
+            }
+            if (parsed.note) note = parsed.note;
+            if (parsed.requestedAt) requestedAt = parsed.requestedAt;
+            if (parsed.respondedAt) respondedAt = parsed.respondedAt;
+          } else {
+            note = assoc.purpose;
+          }
+        } catch (e) {
+          note = assoc.purpose;
+        }
+      }
+
+      let status: 'PENDING' | 'ACTIVE' | 'REVOKED' = 'ACTIVE';
+      if (assoc.status === 'PENDING_CONFIRMATION') {
+        status = 'PENDING';
+      } else if (assoc.status === 'REVOKED' || assoc.status === 'EXPIRED') {
+        status = 'REVOKED';
+      }
+
+      const req: ConsentRequest = {
+        id: assoc.id,
+        patientId: assoc.patientId,
+        patientName: assoc.patient?.fullName || 'Patient',
+        patientMrn: assoc.patient?.mrn || '',
+        providerId: assoc.providerId,
+        providerName: assoc.provider?.fullName || 'Healthcare Provider',
+        providerRole: (assoc.provider?.role as any) || 'DOCTOR',
+        providerOrg: assoc.provider?.organization || 'Clinical Facility',
+        providerLicense: assoc.provider?.licenseNumber || 'Verified License',
+        status,
+        scope: status === 'ACTIVE' ? (scope || 'FULL_ACCESS') : undefined,
+        purpose: note,
+        requestedAt,
+        respondedAt,
+      };
+
+      const existingIndex = this.consents.findIndex(
+        (c) =>
+          c.id === req.id ||
+          ((c.patientId === req.patientId || (req.patientMrn && c.patientMrn === req.patientMrn)) &&
+            c.providerId === req.providerId)
+      );
+
+      if (existingIndex >= 0) {
+        this.consents[existingIndex] = req;
+      } else {
+        this.consents.unshift(req);
+      }
+    });
+
+    this.saveConsents();
+  }
+
   getConsentRequestsByPatient(patientId: string, patientName?: string, patientMrn?: string): ConsentRequest[] {
     return this.consents.filter(
       (c) =>
@@ -299,7 +367,8 @@ class MockService {
     providerOrg: string,
     providerLicense: string,
     patient: PatientProfile,
-    purpose?: string
+    purpose?: string,
+    requestId?: string
   ): ConsentRequest {
     const existingIndex = this.consents.findIndex(
       (c) =>
@@ -308,7 +377,7 @@ class MockService {
     );
 
     const newReq: ConsentRequest = {
-      id: `req-c-${Date.now()}`,
+      id: requestId || `req-c-${Date.now()}`,
       patientId: patient.id,
       patientName: patient.fullName,
       patientMrn: patient.mrn,

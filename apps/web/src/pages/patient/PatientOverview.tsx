@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FolderLock,
@@ -48,13 +48,55 @@ export const PatientOverview: React.FC = () => {
     setConsentRequests(mockService.getConsentRequestsByPatient(activePatient.id, activePatient.mrn));
   };
 
-  const handleConsentDecision = (requestId: string, decision: 'GRANT_CREATE_ONLY' | 'GRANT_FULL_ACCESS' | 'REJECT') => {
+  const syncBackendConsents = async () => {
+    try {
+      const res = await apiClient.getMyAssociations();
+      if (res && res.associations && res.associations.length > 0) {
+        mockService.syncConsentsFromBackend(res.associations);
+      }
+    } catch {
+      // Offline or unauthenticated fallback
+    }
+    setConsentRequests(mockService.getConsentRequestsByPatient(activePatient.id, activePatient.mrn));
+  };
+
+  useEffect(() => {
+    syncBackendConsents();
+    // Poll every 3 seconds to pick up live consent requests dispatched by doctors or labs
+    const interval = setInterval(() => {
+      syncBackendConsents();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activePatient.id, activePatient.mrn]);
+
+  const handleConsentDecision = async (
+    requestId: string,
+    decision: 'GRANT_CREATE_ONLY' | 'GRANT_FULL_ACCESS' | 'REJECT'
+  ) => {
+    const scope =
+      decision === 'GRANT_CREATE_ONLY'
+        ? 'CREATE_ONLY'
+        : decision === 'GRANT_FULL_ACCESS'
+        ? 'FULL_ACCESS'
+        : 'REJECT';
+
+    try {
+      await apiClient.respondToAssociation(requestId, scope);
+    } catch (err) {
+      console.warn('Backend association respond notice:', err);
+    }
+
     mockService.respondToConsentRequest(requestId, decision);
-    apiClient.respondToAssociation(requestId, decision === 'GRANT_CREATE_ONLY' ? 'CREATE_ONLY' : decision === 'GRANT_FULL_ACCESS' ? 'FULL_ACCESS' : 'REJECT').catch(() => {});
     refreshConsents();
   };
 
-  const handleRevokeConsent = (requestId: string) => {
+  const handleRevokeConsent = async (requestId: string) => {
+    try {
+      await apiClient.respondToAssociation(requestId, 'REJECT');
+    } catch (err) {
+      console.warn('Backend association revoke notice:', err);
+    }
+
     mockService.revokeConsent(requestId);
     refreshConsents();
   };
@@ -149,6 +191,34 @@ export const PatientOverview: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Pending Requests High-Priority Banner ── */}
+      {pendingRequests.length > 0 && (
+        <div className="p-4 rounded-xl border-2 border-amber-400 bg-amber-50 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-amber-950 flex items-center gap-2">
+                <span>Action Required: Digital Consent Request ({pendingRequests.length})</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 uppercase tracking-wider">
+                  Needs Decision
+                </span>
+              </div>
+              <p className="text-xs text-amber-800 mt-0.5">
+                A healthcare professional or diagnostic laboratory has requested access. Choose whether to accept (Create Only or Full Access) or reject below.
+              </p>
+            </div>
+          </div>
+          <a
+            href="#consent-section"
+            className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shrink-0 transition-colors shadow-2xs"
+          >
+            Review & Decide Now ↓
+          </a>
+        </div>
+      )}
+
       {/* ── Stat row ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((s) => {
@@ -168,7 +238,7 @@ export const PatientOverview: React.FC = () => {
       </div>
 
       {/* ── ABDM Digital Health Consent Manager ── */}
-      <div className="mc-card p-5 space-y-4 border-blue-200 bg-gradient-to-br from-white via-white to-blue-50/30">
+      <div id="consent-section" className="mc-card p-5 space-y-4 border-blue-200 bg-gradient-to-br from-white via-white to-blue-50/30">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">

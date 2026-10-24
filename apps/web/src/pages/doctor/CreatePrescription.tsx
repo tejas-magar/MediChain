@@ -25,7 +25,6 @@ import {
   Select,
   Checkbox,
   Badge,
-  Modal,
 } from '../../components/ui';
 import { MedicationItem, PrescriptionClinicalData, PatientProfile, ConsentScope } from '../../types';
 import { PrescriptionPreviewModal } from './PrescriptionPreviewModal';
@@ -51,7 +50,6 @@ export const CreatePrescription: React.FC = () => {
   const [consentStatus, setConsentStatus] = useState<'NONE' | 'PENDING' | 'ACTIVE' | 'REVOKED'>('NONE');
   const [consentScope, setConsentScope] = useState<ConsentScope | undefined>(undefined);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
-  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
 
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [pickerSearch, setPickerSearch] = useState('');
@@ -135,19 +133,79 @@ export const CreatePrescription: React.FC = () => {
       });
   }, [searchParams]);
 
-  useEffect(() => {
+  const checkConsentStatus = async () => {
     const providerId = currentUser ? currentUser.id : activeDoctor.id;
-    const status = mockService.getConsentStatus(selectedPatient.id, providerId, selectedPatient.mrn);
-    setConsentStatus(status.status);
-    setConsentScope(status.scope);
+    const mockStatus = mockService.getConsentStatus(selectedPatient.id, providerId, selectedPatient.mrn);
+    if (mockStatus.status === 'ACTIVE') {
+      setConsentStatus('ACTIVE');
+      setConsentScope(mockStatus.scope);
+      return;
+    }
+
+    try {
+      const res = await apiClient.getAssociationStatus(selectedPatient.id);
+      if (res && res.status) {
+        if (res.status === 'ACTIVE') {
+          const scope = res.scope === 'CREATE_ONLY' ? 'CREATE_ONLY' : 'FULL_ACCESS';
+          setConsentStatus('ACTIVE');
+          setConsentScope(scope);
+          mockService.syncConsentsFromBackend([
+            {
+              id: res.id,
+              patientId: selectedPatient.id,
+              providerId,
+              status: 'ACTIVE',
+              purpose: JSON.stringify({ scope, note: res.note }),
+              confirmedAt: res.confirmedAt,
+            },
+          ]);
+        } else if (res.status === 'PENDING_CONFIRMATION') {
+          setConsentStatus('PENDING');
+          setConsentScope(undefined);
+        } else if (res.status === 'REVOKED') {
+          setConsentStatus('REVOKED');
+          setConsentScope(undefined);
+        }
+      } else {
+        setConsentStatus(mockStatus.status);
+        setConsentScope(mockStatus.scope);
+      }
+    } catch {
+      setConsentStatus(mockStatus.status);
+      setConsentScope(mockStatus.scope);
+    }
+  };
+
+  useEffect(() => {
+    checkConsentStatus();
   }, [selectedPatient, currentUser, activeDoctor]);
 
-  const handleSendAccessRequest = () => {
+  // Periodic polling when PENDING so as soon as patient approves in their portal, this page unlocks automatically
+  useEffect(() => {
+    if (consentStatus !== 'PENDING') return;
+    const interval = setInterval(() => {
+      checkConsentStatus();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [consentStatus, selectedPatient, currentUser, activeDoctor]);
+
+  const handleSendAccessRequest = async () => {
     setIsRequestingAccess(true);
     const providerId = currentUser ? currentUser.id : activeDoctor.id;
     const providerName = currentUser ? currentUser.fullName : activeDoctor.fullName;
     const providerOrg = currentUser?.organization || activeDoctor.organization;
     const providerLicense = currentUser?.licenseNumber || activeDoctor.licenseNumber;
+
+    let backendAssocId = '';
+    try {
+      const res = await apiClient.requestAssociation(selectedPatient.id, 'Clinical consultation and digital prescription formulation');
+      if (res.association) {
+        backendAssocId = res.association.id;
+        mockService.syncConsentsFromBackend([res.association]);
+      }
+    } catch (err) {
+      console.warn('[CreatePrescription] Notice requesting association in backend:', err);
+    }
 
     mockService.requestAccess(
       providerId,
@@ -156,38 +214,13 @@ export const CreatePrescription: React.FC = () => {
       providerOrg,
       providerLicense,
       selectedPatient,
-      'Clinical consultation and digital prescription formulation'
+      'Clinical consultation and digital prescription formulation',
+      backendAssocId || undefined
     );
-
-    apiClient.requestAssociation(selectedPatient.id, 'Clinical consultation and prescription formulation').catch(() => {});
 
     setConsentStatus('PENDING');
     setConsentScope(undefined);
     setIsRequestingAccess(false);
-  };
-
-  const handleGrantConsent = (decision: 'GRANT_CREATE_ONLY' | 'GRANT_FULL_ACCESS') => {
-    const providerId = currentUser ? currentUser.id : activeDoctor.id;
-    const status = mockService.getConsentStatus(selectedPatient.id, providerId, selectedPatient.mrn);
-    if (status.request) {
-      mockService.respondToConsentRequest(status.request.id, decision);
-      apiClient.respondToAssociation(status.request.id, decision === 'GRANT_CREATE_ONLY' ? 'CREATE_ONLY' : 'FULL_ACCESS').catch(() => {});
-    }
-    setConsentStatus('ACTIVE');
-    setConsentScope(decision === 'GRANT_CREATE_ONLY' ? 'CREATE_ONLY' : 'FULL_ACCESS');
-    setIsDemoModalOpen(false);
-  };
-
-  const handleDeclineConsent = () => {
-    const providerId = currentUser ? currentUser.id : activeDoctor.id;
-    const status = mockService.getConsentStatus(selectedPatient.id, providerId, selectedPatient.mrn);
-    if (status.request) {
-      mockService.respondToConsentRequest(status.request.id, 'REJECT');
-      apiClient.respondToAssociation(status.request.id, 'REJECT').catch(() => {});
-    }
-    setConsentStatus('REVOKED');
-    setConsentScope(undefined);
-    setIsDemoModalOpen(false);
   };
 
   const filteredPatients = allPatients.filter((p) => {
@@ -600,7 +633,7 @@ export const CreatePrescription: React.FC = () => {
                 Sign in with a verified Doctor account to request digital consent from {selectedPatient.fullName}.
               </div>
             ) : consentStatus === 'ACTIVE' ? (
-              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs space-y-1.5 text-emerald-900">
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs space-y-2 text-emerald-900">
                 <div className="font-bold flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   <span>Verified Patient Consent Active</span>
@@ -610,25 +643,77 @@ export const CreatePrescription: React.FC = () => {
                     ? 'Granted Scope: "Allow to create only new prescription or report" — Prior medical history remains confidential; authorization granted to seal this clinical prescription.'
                     : 'Granted Scope: "Share all previous reports and create new report" — Full longitudinal access and prescription issuance granted.'}
                 </p>
+
+                {consentScope === 'FULL_ACCESS' && (
+                  <div className="mt-3 pt-3 border-t border-emerald-200">
+                    <div className="text-xs font-bold text-slate-800 mb-2 flex items-center justify-between">
+                      <span>Shared Medical Records & Prior Diagnostic History ({mockService.getDocumentsByPatient(selectedPatient.id, selectedPatient.mrn, selectedPatient.fullName).length}):</span>
+                    </div>
+                    {mockService.getDocumentsByPatient(selectedPatient.id, selectedPatient.mrn, selectedPatient.fullName).length === 0 ? (
+                      <div className="text-[11px] text-slate-500 italic">No previous clinical documents on record for this patient.</div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        {mockService.getDocumentsByPatient(selectedPatient.id, selectedPatient.mrn, selectedPatient.fullName).map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="p-2 rounded-lg bg-white border border-slate-200 flex items-center justify-between gap-2 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-900 truncate">
+                                <span className="font-mono text-[10px] text-blue-600 mr-1.5">{doc.documentNumber}</span>
+                                {doc.title}
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                {doc.category} • {doc.issuerName} ({doc.issuerOrg}) • {new Date(doc.issuedAt).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <Link
+                              to={`/documents/${doc.id}`}
+                              target="_blank"
+                              className="px-2 py-0.5 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 shrink-0"
+                            >
+                              View
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {consentScope === 'CREATE_ONLY' && (
+                  <div className="mt-2 text-[11px] text-amber-900 bg-amber-50/80 border border-amber-200 rounded-md p-2 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Prior records restricted by patient consent. Clinical issuance of new prescription is authorized.</span>
+                  </div>
+                )}
               </div>
             ) : consentStatus === 'PENDING' ? (
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-xs space-y-2 text-amber-900">
-                <div className="font-bold flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  <span>Access Request Pending Patient Authorization</span>
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-900 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold flex items-center gap-2 text-sm">
+                    <Clock className="w-4.5 h-4.5 text-amber-600 animate-pulse" />
+                    <span>Access Request Pending Patient Authorization</span>
+                  </div>
+                  <Badge variant="warning" className="text-xs">
+                    Awaiting Patient Portal Approval
+                  </Badge>
                 </div>
-                <p className="text-amber-800">
-                  A digital consent request was dispatched to {selectedPatient.fullName} ({selectedPatient.mrn}). The patient can approve via their Patient Portal.
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  A digital consent request was dispatched to <strong>{selectedPatient.fullName}</strong> ({selectedPatient.mrn}). The patient can approve via their Patient Portal.
                 </p>
-                <div className="pt-1 flex items-center gap-2">
+                <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs border-t border-amber-200/80">
+                  <span className="text-amber-700 font-medium">
+                    When the patient logs into their portal and approves access, this form will unlock automatically.
+                  </span>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="text-xs bg-white text-amber-900 border-amber-300 hover:bg-amber-100"
-                    onClick={() => setIsDemoModalOpen(true)}
+                    className="text-xs bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shrink-0"
+                    onClick={checkConsentStatus}
                   >
-                    Simulate Patient Approval (Demo Gateway)
+                    Refresh Status
                   </Button>
                 </div>
               </div>
@@ -890,77 +975,6 @@ export const CreatePrescription: React.FC = () => {
           </div>
         </div>
       </form>
-
-      {/* Patient Consent Simulator Modal (Demo Mode) */}
-      <Modal
-        isOpen={isDemoModalOpen}
-        onClose={() => setIsDemoModalOpen(false)}
-        title="Patient Consent Authorization (ABDM Gateway)"
-      >
-        <div className="space-y-4">
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900">
-            <span className="font-bold block text-sm mb-1">Incoming Provider Access Request</span>
-            <p>
-              Dr. {currentUser ? currentUser.fullName : activeDoctor.fullName} ({currentUser?.organization || activeDoctor.organization}) is requesting clinical authorization for patient <strong>{selectedPatient.fullName}</strong>.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 block">
-              Patient Choice — Select Authorization Level:
-            </label>
-
-            <button
-              type="button"
-              onClick={() => handleGrantConsent('GRANT_CREATE_ONLY')}
-              className="w-full text-left p-3.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all group"
-            >
-              <div className="text-xs font-bold text-slate-900 group-hover:text-blue-700 flex items-center justify-between">
-                <span>1. Allow to create only new prescription or report</span>
-                <Badge variant="neutral" className="text-[10px]">Restricted</Badge>
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1">
-                The provider can formulate and sign this new prescription, but CANNOT view your past medical records and diagnostic folders.
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleGrantConsent('GRANT_FULL_ACCESS')}
-              className="w-full text-left p-3.5 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/50 transition-all group"
-            >
-              <div className="text-xs font-bold text-slate-900 group-hover:text-emerald-700 flex items-center justify-between">
-                <span>2. Share all previous reports and create new report</span>
-                <Badge variant="success" className="text-[10px]">Full Access</Badge>
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1">
-                The provider is authorized to inspect historical prescriptions and lab panels as well as formulate new clinical orders.
-              </div>
-            </button>
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleDeclineConsent}
-              className="text-xs text-red-600 hover:bg-red-50 border-red-200"
-            >
-              Decline Request
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setIsDemoModalOpen(false)}
-              className="text-xs"
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
       {/* Preview & Cryptographic Finalization Modal */}
       {isPreviewOpen && (

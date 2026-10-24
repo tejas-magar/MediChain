@@ -216,7 +216,7 @@ export const INITIAL_DOCUMENTS: MedicalDocument[] = [
     verificationToken: 'tok_lab_0081_01_e182bd92',
     qrCodeUrl: 'http://localhost:5173/verify/tok_lab_0081_01_e182bd92',
     clinicalData: {
-      testCategory: 'Comprehensive Metabolic Panel',
+      testCategory: 'Chemistry',
       specimenType: 'Serum / Venous Blood',
       collectionTimestamp: '2026-10-14T08:15:00Z',
       fastingStatus: 'Fasting (12 hrs)',
